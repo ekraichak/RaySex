@@ -1,0 +1,152 @@
+---
+title: "Ray Sex Ratio"
+author: "Ekaphan Kraichak"
+date: '2022-10-02'
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(zoo)
+library(lubridate)
+```
+
+## import data
+
+```{r}
+ray <- read_csv("ray_brood.csv", na = "NA")
+ray
+
+water <- read_csv("water_quality.csv", na = "NA")
+water
+```
+
+## Data at the date-level
+
+```{r}
+library(lubridate)
+
+temp_d <- water %>% 
+  mutate(Actual_date = make_date(year = Year, month = Month, day = Date)) %>% 
+  group_by(Actual_date) %>% 
+  summarize(mean_temp = mean(Temperature, na.rm = T)) %>% 
+  drop_na()
+
+ray_d <- ray %>% 
+  mutate(Actual_date = make_date(year = Year, month = Month, day = Date)) %>% 
+  select(Actual_date, Male, Female) %>% 
+  mutate(Total = Male + Female) %>% 
+  mutate(Male_ratio = Male/Total)
+```
+
+## Temporal variation in Sex-Ratio
+
+```{r}
+ray_d %>%
+  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(mo_date) %>% 
+  summarize(across(Male:Total, sum)) %>% 
+  filter(Total > 10) %>% 
+  mutate(m_ratio = Male/Total) -> ray_d2
+
+ray  
+ggplot(aes(x = log(Total), y = m_ratio)) +
+  geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"))
+
+gg <- glm(m_ratio ~ Total, data = ray_d2, family = binomial)
+summary(gg)
+  
+    geom_smooth(se = F) +
+    geom_jitter(alpha = 0.5)
+
+```
+
+## Correlations between two time-series
+
+```{r}
+ray_d %>% 
+  filter(Total >=5 ) %>% 
+  select(Actual_date, Male_ratio) %>%
+  full_join(temp_d) %>% 
+  filter(Actual_date < "2021-07-01", Actual_date >= "2021-01-01") %>% 
+  pivot_longer(Male_ratio:mean_temp, names_to = "variable", values_to = "value") %>% 
+  ggplot(aes(x = Actual_date, y = value)) +
+  geom_point() +
+  geom_smooth() +
+  facet_grid(variable ~ ., scales = "free_y")
+```
+
+## water data quality checking
+
+```{r}
+
+water_d %>% 
+  filter(Actual_date > "2020-06-01", Actual_date < "2021-07-01") %>% 
+  select(Actual_date, TDS:Temperature) %>% 
+  pivot_longer(-Actual_date, names_to = "parameter", values_to = "value") %>% 
+  ggplot(aes(x = Actual_date, y = value)) +
+  geom_point() +
+  geom_smooth() +
+  facet_grid(parameter ~ ., scales = "free_y")
+```
+
+ray juvenile data checking
+
+```{r}
+ray_d %>% 
+  #filter(Actual_date > "2020-06-01", Actual_date < "2021-07-01") %>% 
+  mutate(wk_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(wk_date) %>% 
+  summarize(across(Male:Total, sum)) %>% 
+  mutate(Male_ratio = Male/Total) %>% 
+  pivot_longer(-wk_date, names_to = "parameter", values_to = "value") %>% 
+  ggplot(aes(x = wk_date, y = value)) +
+  geom_line() +
+  geom_smooth() +
+  facet_grid(parameter ~ ., scales = "free_y")
+  
+```
+
+Combine data
+
+```{r}
+water_mo <- water_d %>% 
+  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
+  filter(mo_date > "2020-06-01", mo_date < "2021-07-01") %>% 
+  select(mo_date, TDS:Temperature) %>% 
+  group_by(mo_date) %>% 
+  summarize(across(TDS:Temperature, mean, na.rm = T))
+
+ray_mo <- ray_d %>% 
+  filter(Actual_date > "2020-06-01", Actual_date < "2021-07-01") %>% 
+  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(mo_date) %>% 
+  summarize(across(Male:Total, sum)) %>% 
+  mutate(Male_ratio = Male/Total)
+
+water_ray_mo <- left_join(water_mo, ray_mo)
+```
+
+Correlation plots
+
+```{r}
+water_ray_mo %>% 
+  select(pH, DO, Alkalinity, Temperature, Male_ratio, Total) %>% 
+  ggpairs()
+```
+
+```{r}
+ray_d %>% 
+  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(mo_date) %>% 
+  summarize(across(Male:Total, sum)) %>% 
+  mutate(Male_ratio = Male/Total) %>% 
+  mutate(mo = month(mo_date)) %>% 
+  #select(mo, Temperature, Male_ratio, Total) %>% 
+  mutate(season = ifelse(mo %in% c(10,11,12,1,2), "cold", "hot")) %>% 
+  pivot_longer(Male:Male_ratio, names_to = "para", values_to = "value") %>% 
+  ggplot(aes(x = value, fill = season)) +
+  geom_density(alpha = 0.5) + 
+  facet_wrap(~ para, scales = "free")
+```
