@@ -2,7 +2,7 @@
 title: "Ray Sex Ratio"
 author: "Ekaphan Kraichak"
 date: '2022-10-02'
-output: html_document
+output: github_document
 bibliography: references.bib
 ---
 
@@ -10,6 +10,7 @@ bibliography: references.bib
 library(tidyverse)
 library(zoo)
 library(lubridate)
+library(broom)
 ```
 
 ## Data prep
@@ -133,6 +134,25 @@ summary(ray_m1)
 
 The results showed that the male ratio increased with the increasing total number of fries, but the slope was not significantly different from zero (p = 0.687).
 
+### 3) Time-series analysis
+
+We will also look at the sex-ratio data on the daily basis as a time-series to see if any pattern emerge.
+
+```{r}
+library(TSstudio)
+library(timetk)
+
+plot_stl_diagnostics(ray_d2, .date_var = mo_date, .value = m_ratio, .feature_set = c("observed", "season", "trend", "remainder"), .interactive = FALSE)
+```
+
+Seasonal pattern
+
+```{r}
+plot_seasonal_diagnostics(ray_d2, .date_var = mo_date, .value = m_ratio, .interactive = FALSE)
+```
+
+no clear seasonal pattern whatsoever
+
 ## Effect of temperature on sex-ratio
 
 ### 1) data formatting
@@ -154,13 +174,15 @@ Given that a ray takes about 100-120 days to give birth to a fry, we will calcul
 temp_ray <- ray_d %>% 
   mutate(conception = floor_date(Actual_date - 120, unit = "month"), 
          halfterm = floor_date(Actual_date - 60, unit = "month"), 
-         birth_date = floor_date(Actual_date, unit = "month")) %>% 
-  group_by(birth_date, halfterm, conception) %>% 
+         hatch_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(hatch_date, halfterm, conception) %>% 
   summarize(across(Male:Total, sum)) %>% 
   filter(Total > 10) %>% 
   mutate(m_ratio = Male/Total) %>% 
-  select(birth_date:conception, m_ratio) %>% 
-  pivot_longer(birth_date:conception, names_to = "event", values_to = "mo_date") %>% 
+  ungroup() %>% 
+  select(hatch_date:conception, m_ratio) %>% 
+  filter(hatch_date <= "2021-06-01") %>%  ## date become to weird after that
+  pivot_longer(hatch_date:conception, names_to = "event", values_to = "mo_date") %>% 
   right_join(temp_d2) %>% 
   drop_na()
 
@@ -169,6 +191,19 @@ temp_ray
 
 ### 2) Visualize the data
 
+visualize the time series of temperature at birth and male ratio
+
+```{r}
+temp_d2 %>% 
+  left_join(ray_d2) %>% 
+  filter(mo_date <= "2021-06-01") %>% 
+  select(mo_date, mean_temp, m_ratio) %>% 
+  pivot_longer(-mo_date, names_to = "type", values_to = "value") %>% 
+  ggplot(aes(x = mo_date, y = value)) +
+  geom_line() +
+  facet_grid(type ~ ., scales = "free_y")
+```
+
 temperature at birth, conception, half-term date and male ratio
 
 ```{r}
@@ -176,10 +211,24 @@ temp_ray %>%
   ggplot(aes(x = mean_temp, y = m_ratio)) +
   geom_point() +
   geom_smooth(method = "glm", method.args = list(family = "binomial"), se = F) +
-  facet_grid(~ event) +
+  facet_grid(~ event, scales = "free_x") +
   theme_minimal() +
-  labs(x = "Average Monthly Temperature (")
+  labs(x = "Average Monthly Temperature (°C)", y = "Male Ratio")
   
 ```
 
-3)
+3) Formally testing the affect of temperature
+
+To determine the effect of temperature at conception, halfterm, hatch date on the sex ratio, we performed generalized linear models, using the function `glm` with the binomial error family for the ratio data.
+
+```{r}
+temp_ray %>% 
+  group_by(event) %>% 
+  nest() %>% 
+  mutate(model = map(data, ~glm(m_ratio ~ mean_temp, data = ., family = "binomial"))) %>% 
+  mutate(tidied = map(model, tidy)) %>% 
+  unnest(tidied) %>% 
+  filter(term == "mean_temp")
+```
+
+mean temperature did not significantly affect the male ratio at any point in the reproductive cycle (p ≥ 0.87).
