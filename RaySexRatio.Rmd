@@ -3,6 +3,7 @@ title: "Ray Sex Ratio"
 author: "Ekaphan Kraichak"
 date: '2022-10-02'
 output: html_document
+bibliography: references.bib
 ---
 
 ```{r}
@@ -11,7 +12,9 @@ library(zoo)
 library(lubridate)
 ```
 
-## import data
+## Data prep
+
+### 1) import data
 
 ```{r}
 ray <- read_csv("ray_brood.csv", na = "NA")
@@ -21,7 +24,7 @@ water <- read_csv("water_quality.csv", na = "NA")
 water
 ```
 
-## Data at the date-level
+### 2) Data at the date-level
 
 ```{r}
 library(lubridate)
@@ -41,112 +44,142 @@ ray_d <- ray %>%
 
 ## Temporal variation in Sex-Ratio
 
+Here we will calculate the the sex-ratio for each month by adding all the male and female fries produced in each calendar month and calculating the male sex ratio by dividing the number of male fries with the number of total fries in each month. The month with less than 10 fries was removed, as the extreme sex ratio is likely to occur in the small population.
+
 ```{r}
-ray_d %>%
+ray_d2 <- ray_d %>%
   mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
   group_by(mo_date) %>% 
   summarize(across(Male:Total, sum)) %>% 
   filter(Total > 10) %>% 
-  mutate(m_ratio = Male/Total) -> ray_d2
-
-ray  
-ggplot(aes(x = log(Total), y = m_ratio)) +
-  geom_point() +
-  geom_smooth(method = "glm", method.args = list(family = "binomial"))
-
-gg <- glm(m_ratio ~ Total, data = ray_d2, family = binomial)
-summary(gg)
-  
-    geom_smooth(se = F) +
-    geom_jitter(alpha = 0.5)
-
+  mutate(m_ratio = Male/Total)
 ```
 
-## Correlations between two time-series
+### 1) Statistical Analysis
+
+#### 1.1) Overall pattern
+
+We performed a one-sample t-test to see if the monthly sex ratios significantly differ from the expected ratio of 0.5, using the function `t.test` in R.
 
 ```{r}
-ray_d %>% 
-  filter(Total >=5 ) %>% 
-  select(Actual_date, Male_ratio) %>%
-  full_join(temp_d) %>% 
-  filter(Actual_date < "2021-07-01", Actual_date >= "2021-01-01") %>% 
-  pivot_longer(Male_ratio:mean_temp, names_to = "variable", values_to = "value") %>% 
-  ggplot(aes(x = Actual_date, y = value)) +
-  geom_point() +
-  geom_smooth() +
-  facet_grid(variable ~ ., scales = "free_y")
+t.test(ray_d2$m_ratio, mu = 0.5)
 ```
 
-## water data quality checking
+The average male ratio in this population was 0.47, which was significantly below the expected ratio of 0.5 (p = 0.01).
+
+The density plot of the ratio data was drawn using the `ggplot2` function to visualize the distribution of the sex ratio data. The red dashed line represents the expected ratio at 0.5, and the solid blue line represents the average male ratio of th population.
 
 ```{r}
-
-water_d %>% 
-  filter(Actual_date > "2020-06-01", Actual_date < "2021-07-01") %>% 
-  select(Actual_date, TDS:Temperature) %>% 
-  pivot_longer(-Actual_date, names_to = "parameter", values_to = "value") %>% 
-  ggplot(aes(x = Actual_date, y = value)) +
-  geom_point() +
-  geom_smooth() +
-  facet_grid(parameter ~ ., scales = "free_y")
+ray_d2 %>% 
+  ggplot(aes(x = m_ratio)) +
+  geom_density() +
+  geom_vline(aes(xintercept = 0.5), color = "red", linetype = 2) +
+  geom_vline(aes(xintercept = 0.4763427), color = "blue") +
+  labs(x = "Male Ratio") +
+  theme_minimal()
 ```
 
-ray juvenile data checking
+#### 1.2) Chi-square test for each month
+
+To test whether the monthly sex-ratio deviated significantly from the expected ratio at 0.5, we performed a Chi-square test with the number of male and female fries from each month, using the `chisq.test` function in R.
 
 ```{r}
-ray_d %>% 
-  #filter(Actual_date > "2020-06-01", Actual_date < "2021-07-01") %>% 
-  mutate(wk_date = floor_date(Actual_date, unit = "month")) %>% 
-  group_by(wk_date) %>% 
-  summarize(across(Male:Total, sum)) %>% 
-  mutate(Male_ratio = Male/Total) %>% 
-  pivot_longer(-wk_date, names_to = "parameter", values_to = "value") %>% 
-  ggplot(aes(x = wk_date, y = value)) +
+chi_p <- function(x, y) {
+  vv <- c(x, y)
+  xx <- chisq.test(vv)
+  yy <- xx$p.value
+  yy
+}
+
+ray_d2 %>% 
+  rowwise() %>% 
+  mutate(chi_p = chi_p(Male, Female)) %>% 
+  print(n = "all")
+```
+
+All of the monthly ratio, except for one record in September 2018 (p = 0.0138), did not deviate significantly from the ratio of 0.5 (p ≥ 0.121).
+
+### 2) Graphical patterns
+
+To visualize the pattern of sex-ratio overtime, we used a line graph with the `ggplot2` packages[@ggplot2] in R. The red dashed line represents the expected ratio at 0.5. The solid blue line and grey ribbon represent the predicted values and associated 95% confidence interval from the LOESS fit, using the `geom_smooth` function.
+
+```{r}
+ray_d2 %>% 
+  ggplot(aes(x = mo_date, y = m_ratio)) +
   geom_line() +
+  geom_hline(aes(yintercept = 0.5), color = "red", linetype = 2) +
   geom_smooth() +
-  facet_grid(parameter ~ ., scales = "free_y")
+  theme_minimal() +
+  labs(x = "Time", y = "Male Ratio")
+```
+
+The graph indicated that the majority of ratio was slightly below the expected ratio of 0.5. The lower ration prior to 2018, and after the second half of 2021 appeared to be the artifact of the lower total number of fries, as shown in the graph below.
+
+```{r}
+ray_d2 %>% 
+  ggplot(aes(x = log(Total), y = m_ratio)) +
+  geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = F) +
+  labs(x = "log(Total Number of Fries)", y = "Male Ratio") +
+  theme_minimal()
+```
+
+To test the effect of the total number of fries on the male ratio, we applied the generalized linear model with the "binomial" error family for the ratio data [@proporti2012] with the function `glm` in R.
+
+```{r}
+ray_m1 <- glm(m_ratio ~ log(Total), data = ray_d2, family = "binomial")
+summary(ray_m1)
+```
+
+The results showed that the male ratio increased with the increasing total number of fries, but the slope was not significantly different from zero (p = 0.687).
+
+## Effect of temperature on sex-ratio
+
+### 1) data formatting
+
+Since the sex ratio was calculated on the monthly basis, the temperature data will follow the same time interval for summarization
+
+```{r}
+temp_d2 <- temp_d %>%   
+  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(mo_date) %>% 
+  summarize(mean_temp = mean(mean_temp))
+
+temp_d2
+```
+
+Given that a ray takes about 100-120 days to give birth to a fry, we will calculate the conception date (at 120 birth before birth) and half term date (60 days before birth) as well.
+
+```{r}
+temp_ray <- ray_d %>% 
+  mutate(conception = floor_date(Actual_date - 120, unit = "month"), 
+         halfterm = floor_date(Actual_date - 60, unit = "month"), 
+         birth_date = floor_date(Actual_date, unit = "month")) %>% 
+  group_by(birth_date, halfterm, conception) %>% 
+  summarize(across(Male:Total, sum)) %>% 
+  filter(Total > 10) %>% 
+  mutate(m_ratio = Male/Total) %>% 
+  select(birth_date:conception, m_ratio) %>% 
+  pivot_longer(birth_date:conception, names_to = "event", values_to = "mo_date") %>% 
+  right_join(temp_d2) %>% 
+  drop_na()
+
+temp_ray
+```
+
+### 2) Visualize the data
+
+temperature at birth, conception, half-term date and male ratio
+
+```{r}
+temp_ray %>% 
+  ggplot(aes(x = mean_temp, y = m_ratio)) +
+  geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = F) +
+  facet_grid(~ event) +
+  theme_minimal() +
+  labs(x = "Average Monthly Temperature (")
   
 ```
 
-Combine data
-
-```{r}
-water_mo <- water_d %>% 
-  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
-  filter(mo_date > "2020-06-01", mo_date < "2021-07-01") %>% 
-  select(mo_date, TDS:Temperature) %>% 
-  group_by(mo_date) %>% 
-  summarize(across(TDS:Temperature, mean, na.rm = T))
-
-ray_mo <- ray_d %>% 
-  filter(Actual_date > "2020-06-01", Actual_date < "2021-07-01") %>% 
-  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
-  group_by(mo_date) %>% 
-  summarize(across(Male:Total, sum)) %>% 
-  mutate(Male_ratio = Male/Total)
-
-water_ray_mo <- left_join(water_mo, ray_mo)
-```
-
-Correlation plots
-
-```{r}
-water_ray_mo %>% 
-  select(pH, DO, Alkalinity, Temperature, Male_ratio, Total) %>% 
-  ggpairs()
-```
-
-```{r}
-ray_d %>% 
-  mutate(mo_date = floor_date(Actual_date, unit = "month")) %>% 
-  group_by(mo_date) %>% 
-  summarize(across(Male:Total, sum)) %>% 
-  mutate(Male_ratio = Male/Total) %>% 
-  mutate(mo = month(mo_date)) %>% 
-  #select(mo, Temperature, Male_ratio, Total) %>% 
-  mutate(season = ifelse(mo %in% c(10,11,12,1,2), "cold", "hot")) %>% 
-  pivot_longer(Male:Male_ratio, names_to = "para", values_to = "value") %>% 
-  ggplot(aes(x = value, fill = season)) +
-  geom_density(alpha = 0.5) + 
-  facet_wrap(~ para, scales = "free")
-```
+3)
