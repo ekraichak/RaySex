@@ -328,6 +328,22 @@ ray_d2 %>%
 
 ![](RaySexRatio_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
+Total vs. Male Ratio
+
+``` r
+ray_d2 %>% 
+  select(mo_date, Total, m_ratio) %>% 
+  pivot_longer(-mo_date) %>% 
+  ggplot(aes(x = mo_date, y = value)) +
+  geom_line() +
+  geom_smooth() +
+  facet_grid(name ~ ., scales = "free_y") 
+```
+
+    ## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+
+![](RaySexRatio_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
 To test the effect of the total number of fries on the male ratio, we
 applied the generalized linear model with the “binomial” error family
 for the ratio data (“Proportion Data” 2012) with the function `glm` in
@@ -384,7 +400,7 @@ plot_stl_diagnostics(ray_d2, .date_var = mo_date, .value = m_ratio, .feature_set
 
     ## trend = 12 observations per 1 year
 
-![](RaySexRatio_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](RaySexRatio_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 Seasonal pattern
 
@@ -392,7 +408,7 @@ Seasonal pattern
 plot_seasonal_diagnostics(ray_d2, .date_var = mo_date, .value = m_ratio, .interactive = FALSE)
 ```
 
-![](RaySexRatio_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+![](RaySexRatio_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
 no clear seasonal pattern whatsoever
 
@@ -496,7 +512,7 @@ temp_d2 %>%
 
     ## Joining, by = "mo_date"
 
-![](RaySexRatio_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+![](RaySexRatio_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
 
 temperature at birth, conception, half-term date and male ratio
 
@@ -518,7 +534,7 @@ temp_ray %>%
 
     ## Warning in eval(family$initialize): non-integer #successes in a binomial glm!
 
-![](RaySexRatio_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+![](RaySexRatio_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
 
 3)  Formally testing the affect of temperature
 

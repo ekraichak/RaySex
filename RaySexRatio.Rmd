@@ -125,6 +125,18 @@ ray_d2 %>%
   theme_minimal()
 ```
 
+Total vs. Male Ratio
+
+```{r}
+ray_d2 %>% 
+  select(mo_date, Total, m_ratio) %>% 
+  pivot_longer(-mo_date) %>% 
+  ggplot(aes(x = mo_date, y = value)) +
+  geom_line() +
+  geom_smooth() +
+  facet_grid(name ~ ., scales = "free_y") 
+```
+
 To test the effect of the total number of fries on the male ratio, we applied the generalized linear model with the "binomial" error family for the ratio data [@proporti2012] with the function `glm` in R.
 
 ```{r}
